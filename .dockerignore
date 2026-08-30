@@ -1,0 +1,24 @@
+# Keep the build context small: everything here is either irrelevant to the
+# build or would invalidate the layer cache on every commit.
+.git
+.github
+.idea
+.vscode
+
+bin/
+tmp/
+*.log
+build-errors.log
+coverage.out
+coverage.html
+
+# Secrets must never land in an image layer.
+.env
+.env.*
+!.env.example
+
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+README.md
+*.md

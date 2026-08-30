@@ -1,0 +1,126 @@
+name: go-boilerplate
+
+services:
+  postgres:
+    image: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-app}
+      # Skips the slow locale-aware collation setup; the app stores UTF-8.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Bound to loopback so the database is reachable from your machine for
+    # psql/GUI clients, but is NOT exposed on the host's public interfaces.
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
+    command:
+      - postgres
+      # max_connections must exceed (app replicas x DB_MAX_OPEN_CONNS) plus
+      # headroom for your own psql sessions, or the app will fail to acquire
+      # connections under load.
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      # Write the query plan for anything slower than 500ms into the logs.
+      - -c
+      - log_min_duration_statement=500
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  redis:
+    image: redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      # AOF persistence: without it, a Redis restart logs every user out,
+      # because sessions live only in Redis.
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      # noeviction, NOT allkeys-lru: with an eviction policy Redis would silently
+      # drop live sessions under memory pressure, logging users out at random.
+      # Failing writes loudly is the safer trade for session storage.
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+    restart: unless-stopped
+    # Base config comes from .env; the values below override the host-oriented
+    # ones, because inside the compose network the services are reachable by
+    # service name, not localhost.
+    env_file:
+      - .env
+    environment:
+      APP_PORT: "8080"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # Docker's embedded DNS resolves service names; the bridge network is the
+      # only thing in front of the app, so trust its range for client IPs.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+    depends_on:
+      # Waits for the healthchecks above, not merely for the containers to
+      # start — otherwise the app races Postgres' first-boot initialization.
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${APP_HOST_PORT:-8080}:8080"
+    # Reaps zombie processes and forwards signals properly to PID 1.
+    init: true
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  postgres-data:
+  redis-data:

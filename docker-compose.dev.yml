@@ -1,0 +1,33 @@
+# Development override: hot reload via Air, source bind-mounted from the host.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#   (or simply: make dev-up)
+#
+# Everything not restated here is inherited from docker-compose.yml.
+
+services:
+  app:
+    build:
+      dockerfile: Dockerfile.dev
+    environment:
+      APP_ENV: development
+      LOG_LEVEL: debug
+      LOG_FORMAT: text
+    volumes:
+      # Live source. Air rebuilds inside the container on every save.
+      - .:/src
+      # Named volumes keep the module and build caches out of the bind mount,
+      # so rebuilds stay fast and don't litter the host with root-owned files.
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      # Anonymous volume so Air's build output stays inside the container and
+      # doesn't drop root-owned files into your working tree.
+      - /src/tmp
+    # Air needs a moment to compile on first boot; don't fail the healthcheck
+    # while it does.
+    healthcheck:
+      start_period: 60s
+
+volumes:
+  go-mod-cache:
+  go-build-cache:

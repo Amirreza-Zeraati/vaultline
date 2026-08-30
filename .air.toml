@@ -1,0 +1,34 @@
+# Air hot-reload config: https://github.com/air-verse/air
+# Run with: make dev
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/api ./cmd/api"
+  bin = "./tmp/api"
+  # Rebuild when these change. SQL is included so new migrations trigger a restart.
+  include_ext = ["go", "sql", "tmpl", "tpl", "html"]
+  exclude_dir = ["tmp", "bin", "vendor", ".git", ".idea", "migrations/.git"]
+  exclude_regex = ["_test\\.go"]
+  exclude_unchanged = true
+  follow_symlink = false
+  # Wait this many ms after a change before rebuilding (debounce).
+  delay = 800
+  # Keep the last successful binary running if the build fails.
+  stop_on_error = true
+  send_interrupt = true
+  kill_delay = 2000
+  log = "build-errors.log"
+
+[log]
+  time = true
+
+[color]
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  clean_on_exit = true
